@@ -334,7 +334,7 @@ def main():
             test_mask_paths.append(mask_path)
         else:
             print(f"Warning: Mask not found for {img_path}")
-            # Remove the corresponding image if mask doesn't exist
+    
             test_image_paths.remove(img_path)
     
     if len(test_image_paths) == 0:
@@ -342,10 +342,9 @@ def main():
     
     print(f"Found {len(test_image_paths)} test images with corresponding masks")
     
-    # Set device
+  
     device = torch.device(DEVICE if use_gpu else "cpu")
-    
-    # Load model
+
     if use_onnx:
         print("Using ONNX model for inference")
         session = get_onnx_session(onnx_model_path, use_gpu=use_gpu)

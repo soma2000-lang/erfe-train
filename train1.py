@@ -244,6 +244,7 @@ def train(model, dataloader, device, optimizer, criterion):
         optimizer.step()
     
     training_loss = running_loss / counter if counter > 0 else float('inf')
+    print("training loss",training_loss)
     return training_loss
 # def eval(model, dataloader, device, criterion):
 
@@ -800,9 +801,9 @@ if __name__ == "__main__":
 
     class_tp_tn_rates, line_tp_tn_rates = evaluate_tp_tn_rate(model, val_loader, DEVICE)
     
-    visualize_tp_tn_rates(class_tp_tn_rates, line_tp_tn_rates)
+    # visualize_tp_tn_rates(class_tp_tn_rates, line_tp_tn_rates)
     
 
-    visualize_segmentation_results(model, val_loader, DEVICE, num_samples=3)
+    # visualize_segmentation_results(model, val_loader, DEVICE, num_samples=3)
     
     print("Training complete!")

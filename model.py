@@ -24,8 +24,8 @@ class BackboneWrapper(nn.Module):
             elif i == 12:
                 high = x  # 1/16 resolution
         
-        print("Low tensor shape:", low.shape if low is not None else "None")
-        print("High tensor shape:", high.shape if high is not None else "None")
+        #print("Low tensor shape:", low.shape if low is not None else "None")
+        #print("High tensor shape:", high.shape if high is not None else "None")
         return {"low": low, "high": high}
 
 class Head(nn.Module):
@@ -65,14 +65,14 @@ class Head(nn.Module):
             raise KeyError(f"Input dictionary must contain 'low' and 'high' keys, got {list(input_dict.keys())}")
         low = input_dict["low"]
         high = input_dict["high"]
-        print("Shape of low tensor in Head:", low.shape[-2:])
+        #print("Shape of low tensor in Head:", low.shape[-2:])
         x = self.cbr(high)
         s = self.scale(high)
         x = x * s
         x = F.interpolate(x, size=low.shape[-2:], mode="bilinear", align_corners=False)
-        print("Shape of x after interpolation:", x.shape)
+        #print("Shape of x after interpolation:", x.shape)
         high_classifier = self.high_classifier(x)
-        print("Shape of output after classifier:", high_classifier.shape)
+        #print("Shape of output after classifier:", high_classifier.shape)
         return {"input_head_remerge_module": x, "high_classifier": high_classifier}
 
 class ERFE(nn.Module):
@@ -112,11 +112,11 @@ class ERFE(nn.Module):
         if not isinstance(features, dict) or 'low' not in features or 'high' not in features:
             raise ValueError("Backbone should return a dictionary with 'low' and 'high' keys") 
         low, high = features["low"], features["high"]
-        print("Shape of low tensor:", low.shape)
-        print("Shape of high tensor:", high.shape)
+        #print("Shape of low tensor:", low.shape)
+        #print("Shape of high tensor:", high.shape)
         head_output = self.segmentation_head(features)
         x_remerge = head_output["input_head_remerge_module"]
-        print("Shape of x_remerge:", x_remerge.shape)
+        #print("Shape of x_remerge:", x_remerge.shape)
         out = self.get_segmentation_output(features)
         # Resize segmentation output to match input size
         out = F.interpolate(out, size=x.shape[-2:], mode="bilinear", align_corners=False)
