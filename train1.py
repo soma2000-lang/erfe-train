@@ -17,12 +17,12 @@ from loss import CombinedLoss,SegmentationLoss
 from dataloader import RunwayDataset
 
 def folder_check(folder_path):
-    """Create folder if it doesn't exist."""
+ 
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
 
 def train(model, dataloader, device, optimizer, criterion):
-    """Single epoch training function."""
+
     model.train()
     running_loss = 0
     counter = 0
@@ -47,7 +47,7 @@ def train(model, dataloader, device, optimizer, criterion):
     return training_loss
 
 def eval(model, dataloader, device, criterion):
-    """Evaluation function."""
+
     model.eval()
     running_loss = 0
     counter = 0
@@ -70,7 +70,7 @@ def eval(model, dataloader, device, criterion):
     return validation_loss
 
 def training_loop(epochs, model, train_loader, val_loader, device, optimizer, criterion, scheduler=None):
-    """Complete training loop for all epochs."""
+ 
     
     train_loss_history = []
     valid_loss_history = []
@@ -123,52 +123,165 @@ def loss_plot(train_loss, valid_loss):
     plt.savefig('runway_segmentation_loss.png')
     plt.close()
 
-def evaluate_segmentation(model, val_loader, device):
-    """Evaluate the segmentation performance with IoU metric."""
+def evaluate_tp_tn_rate(model, val_loader, device, threshold=0.1):
+    """
+    Evaluate the segmentation performance with TP+TN rate as described in the paper.
+    This calculates the rate of correctly classified pixels (both true positives and true negatives).
+    """
     model.eval()
-    total_iou = 0
-    class_iou = {i: 0 for i in range(NUM_SEG_CLASSES)}
-    class_counts = {i: 0 for i in range(NUM_SEG_CLASSES)}
+    
+    # Define class names for printing results
+    class_names = ["Background", "Runway Area", "Aiming Point Marking", "Threshold Marking"]
+    
+    # Initialize counters for each class
+    class_stats = {cls: {'total_pixels': 0, 'correct_pixels': 0} for cls in range(NUM_SEG_CLASSES)}
+    
+    # For line detection if applicable
+    line_stats = {cls: {'total_samples': 0, 'correct_samples': 0} for cls in range(NUM_LINE_CLASSES)} if NUM_LINE_CLASSES > 0 else {}
     
     with torch.no_grad():
-        for images, (seg_true, _) in tqdm(val_loader, desc="Evaluating Segmentation"):
+        # Process segmentation metrics
+        for images, (seg_true, line_true) in tqdm(val_loader, desc="Evaluating TP+TN Rate"):
             images = images.to(device)
             seg_true = seg_true.to(device)
             
-            seg_pred, _ = model(images)
-            seg_pred = F.softmax(seg_pred, dim=1)
-            seg_pred = torch.argmax(seg_pred, dim=1)
+            # Get model predictions
+            seg_pred, line_pred = model(images)
             
-            # Calculating else we could have considered dice coefficent  IoU for each class 
+            # Process segmentation predictions
+            seg_pred = F.softmax(seg_pred, dim=1)
+            seg_pred_classes = torch.argmax(seg_pred, dim=1)
+            
+            # Calculate TP+TN for each class in the batch
             batch_size = images.size(0)
             
             for i in range(batch_size):
                 for cls in range(NUM_SEG_CLASSES):
-                    pred_mask = (seg_pred[i] == cls)
+                    # Getting binary masks for this class  we could have used the rle also inplace of this
                     true_mask = (seg_true[i] == cls)
+                    pred_mask = (seg_pred_classes[i] == cls)
                     
-                    # Only calculate IoU if this class exists in the ground truth
-                    if true_mask.sum() > 0:
-                        intersection = torch.logical_and(pred_mask, true_mask).sum().item()
-                        union = torch.logical_or(pred_mask, true_mask).sum().item()
-                        
-                        iou = intersection / (union + 1e-10)  # Add small epsilon to prevent division by zero
-                        total_iou += iou
-                        class_iou[cls] += iou
-                        class_counts[cls] += 1
+                    # Calculating TP (correctly predicted class pixels)
+                    tp = torch.logical_and(true_mask, pred_mask).sum().item()
+                    
+                    # Calculating  TN (correctly predicted non-class pixels)
+                    tn = torch.logical_and(~true_mask, ~pred_mask).sum().item()
+                    
+                  
+                    class_stats[cls]['total_pixels'] += true_mask.numel()
+                    class_stats[cls]['correct_pixels'] += (tp + tn)
+            
+            # Process line predictions if applicable and if line_true is provided
+            if NUM_LINE_CLASSES > 0 and line_true is not None:
+                # Threshold the line probability maps
+                for cls in range(NUM_LINE_CLASSES):
+                    for i in range(batch_size):
+                        # Check if line exists (max value exceeds threshold)
+                        if hasattr(line_true[i, cls], 'max'):  # Check if it's a tensor
+                            ground_truth_line = line_true[i, cls].max() > threshold
+                            line_detected = line_pred[i, cls].max() > threshold
+                            
+                            line_stats[cls]['total_samples'] += 1
+                            
+                            # Count TP and TN
+                            if (line_detected and ground_truth_line) or (not line_detected and not ground_truth_line):
+                                line_stats[cls]['correct_samples'] += 1
     
-    # Calculating  mean IoU
-    mean_iou = total_iou / sum(class_counts.values())
-    
-    # Calculate class-wise IoU
-    class_names = ["Background", "Runway Area", "Aiming Point Marking", "Threshold Marking"]
-    print("\nClass-wise IoU:")
+    # Calculate TP+TN rates for segmentation
+    class_tp_tn_rates = {}
     for cls in range(NUM_SEG_CLASSES):
-        if class_counts[cls] > 0:
-            cls_iou = class_iou[cls] / class_counts[cls]
-            print(f"{class_names[cls]}: {cls_iou:.4f}")
+        if class_stats[cls]['total_pixels'] > 0:
+            tp_tn_rate = class_stats[cls]['correct_pixels'] / class_stats[cls]['total_pixels']
+            class_tp_tn_rates[cls] = tp_tn_rate
     
-    return mean_iou
+    # Calculate TP+TN rates for line detection not required
+    line_tp_tn_rates = {}
+    if NUM_LINE_CLASSES > 0:
+        line_class_names = ["Left Edge", "Center Line", "Right Edge", "Aiming Point", "Threshold"]
+        for cls in range(NUM_LINE_CLASSES):
+            if cls in line_stats and line_stats[cls]['total_samples'] > 0:
+                tp_tn_rate = line_stats[cls]['correct_samples'] / line_stats[cls]['total_samples']
+                line_tp_tn_rates[cls] = tp_tn_rate
+    
+    # Print results
+    print("\nSegmentation TP+TN Rates:")
+    for cls in range(NUM_SEG_CLASSES):
+        if cls in class_tp_tn_rates:
+            print(f"{class_names[cls]}: {class_tp_tn_rates[cls]:.4f}")
+    
+    if NUM_LINE_CLASSES > 0 and line_tp_tn_rates:
+        print("\nLine Detection TP+TN Rates:")
+        for cls in range(NUM_LINE_CLASSES):
+            if cls in line_tp_tn_rates:
+                line_name = line_class_names[cls] if cls < len(line_class_names) else f"Line {cls}"
+                print(f"{line_name}: {line_tp_tn_rates[cls]:.4f}")
+    
+    # Calculate overall rates
+    overall_seg_tp_tn_rate = sum(class_tp_tn_rates.values()) / len(class_tp_tn_rates) if class_tp_tn_rates else 0
+    overall_line_tp_tn_rate = sum(line_tp_tn_rates.values()) / len(line_tp_tn_rates) if line_tp_tn_rates else 0
+    
+    print(f"\nOverall Segmentation TP+TN Rate: {overall_seg_tp_tn_rate:.4f}")
+    if NUM_LINE_CLASSES > 0 and line_tp_tn_rates:
+        print(f"Overall Line Detection TP+TN Rate: {overall_line_tp_tn_rate:.4f}")
+    
+    return class_tp_tn_rates, line_tp_tn_rates
+
+def visualize_tp_tn_rates(class_tp_tn_rates, line_tp_tn_rates=None, epoch=None):
+    """
+    Visualize TP+TN rates using bar charts similar to the paper's figures.
+    """
+    class_names = ["Background", "Runway Area", "Aiming Point Marking", "Threshold Marking"]
+    line_class_names = ["Left Edge", "Center Line", "Right Edge", "Aiming Point", "Threshold"]
+    
+    # Set up the figure
+    num_plots = 2 if line_tp_tn_rates else 1
+    fig, axes = plt.subplots(1, num_plots, figsize=(6*num_plots, 5))
+    
+    if num_plots == 1:
+        axes = [axes]  # Make it iterable for single plot case
+    
+    # Plot segmentation TP+TN rates
+    ax = axes[0]
+    classes = list(class_tp_tn_rates.keys())
+    rates = [class_tp_tn_rates[cls] for cls in classes]
+    class_labels = [class_names[cls] for cls in classes]
+    
+    bars = ax.bar(class_labels, rates, color='skyblue')
+    ax.set_ylim(0, 1.0)
+    ax.set_ylabel('TP+TN Rate')
+    ax.set_title(f'Segmentation TP+TN Rates{" (Epoch "+str(epoch)+")" if epoch else ""}')
+    
+    # Add rate values on top of the bars
+    for bar, rate in zip(bars, rates):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
+                f'{rate:.3f}', ha='center', va='bottom')
+    
+    # Plot line detection TP+TN rates if available
+    if line_tp_tn_rates:
+        ax = axes[1]
+        line_classes = list(line_tp_tn_rates.keys())
+        line_rates = [line_tp_tn_rates[cls] for cls in line_classes]
+        line_labels = [line_class_names[cls] if cls < len(line_class_names) else f"Line {cls}" 
+                      for cls in line_classes]
+        
+        bars = ax.bar(line_labels, line_rates, color='lightgreen')
+        ax.set_ylim(0, 1.0)
+        ax.set_ylabel('TP+TN Rate')
+        ax.set_title(f'Line Detection TP+TN Rates{" (Epoch "+str(epoch)+")" if epoch else ""}')
+        
+        # Add rate values on top of the bars
+        for bar, rate in zip(bars, line_rates):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
+                    f'{rate:.3f}', ha='center', va='bottom')
+    
+    plt.tight_layout()
+    save_name = f'tp_tn_rates{"_epoch_"+str(epoch) if epoch else ""}.png'
+    plt.savefig(save_name)
+    plt.close()
+    
+    return save_name
 
 def visualize_segmentation_results(model, val_loader, device, num_samples=3):
     """
@@ -183,12 +296,12 @@ def visualize_segmentation_results(model, val_loader, device, num_samples=3):
             if len(samples) >= num_samples:
                 break
             
-            # Get batch results
+  
             batch_size = min(num_samples - len(samples), images.size(0))
             for i in range(batch_size):
                 samples.append((images[i:i+1], seg_true[i:i+1]))
     
-    # Create figure
+  
     fig, axs = plt.subplots(num_samples, 3, figsize=(15, 5*num_samples))
     if num_samples == 1:
         axs = axs.reshape(1, -1)
@@ -246,33 +359,37 @@ def visualize_segmentation_results(model, val_loader, device, num_samples=3):
     plt.close()
 
 if __name__ == "__main__":
-
-
-      
-    image_dir = ["/home/AD/smajumder/runaway/640x360_dataset/640x360/train"]
-    mask_dir = ["/home/AD/smajumder/runaway/resizded_trainimages_640x360"]
-    line_paths = ["/home/AD/smajumder/runaway/train_labels_640x360.json"]
+    # Define paths to data
+    image_dir = "/home/AD/smajumder/runaway/640x360_dataset/640x360/train"
+    mask_dir = "/home/AD/smajumder/runaway/resizded_trainimages_640x360"
+    line_paths_dir = "/home/AD/smajumder/runaway/train_labels_640x360.json"
     
-    # Get all image paths
-    image_paths = [os.path.join(image_dir, fname) for fname in os.listdir(image_dir) 
-                  if fname.endswith('.png') or fname.endswith('.jpg')]
+    # Get all image paths - ensure we're handling paths correctly
+    image_paths = []
+    for fname in os.listdir(image_dir):
+        if fname.endswith('.png') or fname.endswith('.jpg'):
+            image_paths.append(os.path.join(image_dir, fname))
     
     # Get corresponding mask paths - adjust pattern based on your actual naming convention
     mask_paths = []
+    valid_image_paths = []
+    
     for img_path in image_paths:
         img_name = os.path.basename(img_path)
         mask_name = img_name.replace('.png', '_area_label.png')
         mask_path = os.path.join(mask_dir, mask_name)
         if os.path.exists(mask_path):
             mask_paths.append(mask_path)
+            valid_image_paths.append(img_path)
         else:
             print(f"Warning: Mask not found for {img_path}")
-           
-            image_paths.remove(img_path)
+    
+
+    image_paths = valid_image_paths
     
     # Since we're dealing with semantic segmentation only, we'll use empty line paths
     # The dataloader will need to be adjusted to handle this
-    line_paths = [""] * len(image_paths)
+    line_paths = [line_paths_dir] * len(image_paths) if os.path.exists(line_paths_dir) else [""] * len(image_paths)
     
     # Split into train and validation
     train_idx = int(0.8 * len(image_paths))
@@ -302,9 +419,7 @@ if __name__ == "__main__":
         shuffle=False,
     )
     
-    # Set number of segmentation classes based on your usecase
-    # Make sure this matches your config.py
-    # NUM_SEG_CLASSES should be 4 (Background, Runway Area, Aiming Point Marking, Threshold Marking)
+    
     
     model = ERFE(input_shape=INPUT_SHAPE, num_seg_classes=NUM_SEG_CLASSES, num_line_classes=NUM_LINE_CLASSES)
     model = model.to(DEVICE)
@@ -316,7 +431,7 @@ if __name__ == "__main__":
         optimizer, mode='min', factor=0.5, patience=5,
     )
     
-    # Train the model
+
     model, train_loss, valid_loss, best_val_loss, best_epoch = training_loop(
         epochs=NUM_EPOCHS, 
         model=model, 
@@ -328,13 +443,13 @@ if __name__ == "__main__":
         scheduler=scheduler
     )
 
-    # Plot and save loss curves
     loss_plot(train_loss, valid_loss)
-    
-    # Evaluate segmentation performance on validation set
-    mean_iou = evaluate_segmentation(model, val_loader, DEVICE)
-    print(f"Mean IoU on validation set: {mean_iou:.4f}")
 
+    class_tp_tn_rates, line_tp_tn_rates = evaluate_tp_tn_rate(model, val_loader, DEVICE)
+    
+    # Visualize the TP+TN rates
+    visualize_tp_tn_rates(class_tp_tn_rates, line_tp_tn_rates)
+    
     # Visualize some results from the validation set
     visualize_segmentation_results(model, val_loader, DEVICE, num_samples=3)
     

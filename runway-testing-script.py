@@ -20,7 +20,7 @@ def folder_check(folder_path):
 
 def get_onnx_session(onnx_model_path, use_gpu=True):
     """Create an optimized ONNX runtime session with GPU support if available"""
-    # Check if GPU is available
+
     providers = []
     print(onnxruntime.get_available_providers())
     if use_gpu and 'CUDAExecutionProvider' in onnxruntime.get_available_providers():
@@ -32,10 +32,10 @@ def get_onnx_session(onnx_model_path, use_gpu=True):
         providers.append('CPUExecutionProvider')
         print("Using CPU for inference")
     
-    # Set session options for better performance
+   
     session_options = onnxruntime.SessionOptions()
     
-    # Create session with configured providers
+
     session = onnxruntime.InferenceSession(
         onnx_model_path,
         sess_options=session_options,
@@ -46,22 +46,20 @@ def get_onnx_session(onnx_model_path, use_gpu=True):
 
 def load_and_preprocess_image(image_path, input_shape):
     """Load and preprocess an image for the model"""
-    # Read image
+
     image = cv2.imread(image_path)
     if image is None:
         raise ValueError(f"Could not read image at {image_path}")
     
-    # Convert BGR to RGB
+
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     original_shape = image.shape
-    
-    # Define preprocessing
+
     transform = A.Compose([
         A.Resize(height=input_shape[0], width=input_shape[1]),
         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
-    
-    # Apply transformations
+
     transformed = transform(image=image)
     processed_image = transformed["image"]
     
@@ -77,7 +75,7 @@ def process_pytorch_model(model, image_tensor, device):
         image_tensor = image_tensor.to(device)
         seg_pred, line_pred = model(image_tensor)
         
-        # Apply softmax to get class probabilities for segmentation
+
         seg_probs = F.softmax(seg_pred, dim=1)
         seg_pred_class = torch.argmax(seg_probs, dim=1).squeeze().cpu().numpy()
         
@@ -85,7 +83,7 @@ def process_pytorch_model(model, image_tensor, device):
 
 def process_onnx_model(session, image_tensor):
     """Process an image through the ONNX model"""
-    # Prepare input
+
     input_name = session.get_inputs()[0].name
     input_data = image_tensor.cpu().numpy()
     
@@ -94,7 +92,7 @@ def process_onnx_model(session, image_tensor):
     outputs = session.run(None, {input_name: input_data})
     inference_time = time.time() - start_time
     
-    # Process outputs (assuming segmentation output is first)
+    # Processing  outputs (assuming segmentation output is first)
     seg_logits = outputs[0]  # Shape: [batch, classes, height, width]
     seg_probs = np.exp(seg_logits) / np.sum(np.exp(seg_logits), axis=1, keepdims=True)
     seg_pred_class = np.argmax(seg_probs, axis=1).squeeze()
@@ -138,14 +136,13 @@ def process_batch_pytorch(model, image_paths, mask_paths, input_shape, device, b
     all_ious = []
     processing_times = []
     
-    # Process in batches
+   
     for start_idx in range(0, total_images, batch_size):
         end_idx = min(start_idx + batch_size, total_images)
         batch_image_paths = image_paths[start_idx:end_idx]
         batch_mask_paths = mask_paths[start_idx:end_idx]
         current_batch_size = len(batch_image_paths)
-        
-        # Prepare batch tensors
+
         batch_images = []
         batch_shapes = []
         
@@ -154,10 +151,9 @@ def process_batch_pytorch(model, image_paths, mask_paths, input_shape, device, b
             batch_images.append(processed_tensor)
             batch_shapes.append(original_shape)
         
-        # Stack into a single batch tensor
+
         batch_tensor = torch.cat(batch_images, dim=0)
-        
-        # Process through model
+
         with torch.no_grad():
             start_time = time.time()
             batch_tensor = batch_tensor.to(device)
@@ -166,19 +162,16 @@ def process_batch_pytorch(model, image_paths, mask_paths, input_shape, device, b
             seg_pred_classes = torch.argmax(seg_probs, dim=1).cpu().numpy()
             batch_time = time.time() - start_time
             
-            # Calculate time per image
+
             time_per_image = batch_time / current_batch_size
             processing_times.append(time_per_image)
-        
-        # Process each result in the batch
+
         for i in range(current_batch_size):
-            # Get segmentation prediction
+   
             seg_pred = seg_pred_classes[i]
-            
-            # Resize to original shape
+   
             resized_pred = resize_to_original(seg_pred, batch_shapes[i])
             
-            # Load ground truth mask
             gt_mask = cv2.imread(batch_mask_paths[i], cv2.IMREAD_GRAYSCALE)
             if gt_mask is None:
                 print(f"Warning: Could not load mask at {batch_mask_paths[i]}")
@@ -317,14 +310,14 @@ def main():
     # Configuration
     model_path = 'runway_segmentation_best_model.pth'  # Path to the trained PyTorch model
     onnx_model_path = 'runway_segmentation_model.onnx'  # Path to exported ONNX model (if available)
-    test_images_dir = 'dataset/images/test'  # Directory containing test images
+    test_images_dir =   # Directory containing test images
     test_masks_dir = 'dataset/masks/test'  # Directory containing test segmentation masks
     output_dir = 'test_results'  # Directory to save results
     batch_size = 8  # Adjust based on your GPU memory
     use_gpu = True  # Set to False to force CPU execution
     use_onnx = False  # Set to True to use ONNX model instead of PyTorch
     num_visualization_samples = 5  # Number of test samples to visualize
-    
+    "/home/AD/smajumder/runaway/640x360_dataset/640x360/train"
     # Create output directory
     folder_check(output_dir)
     
@@ -386,7 +379,7 @@ def main():
         
         # Save metrics
         metrics = {
-            'class_miou': {str(k): float(v) for k, v in class_miou.items()},
+            'class_miou': {str(k): float(v) for k, v in class_miou.items()}, #may not be required also
             'mean_iou': float(mean_iou),
             'fps': float(fps)
         }

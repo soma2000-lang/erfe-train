@@ -1,7 +1,7 @@
 import torch
 
 
-model = torch.load('erfe_best_model.pth')
+model = torch.load('runway_segmentation_best_model.pth')
 model.eval()
 
 input = torch.randn(3,640, 360) 
@@ -10,7 +10,7 @@ input = torch.randn(3,640, 360)
 torch.onnx.export(
     model,
     input,
-    "erfe.onnx",
+    "runway_segmentation_best_model.onnx",
     input_names=["input"]
   
 
