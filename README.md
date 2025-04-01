@@ -33,3 +33,6 @@ https://pytorch.org/vision/stable/models/generated/torchvision.models.segmentati
 
 ![alt text](image-1.png)
 ![alt text](image-2.png)
+
+# The training loss
+![alt text](image.png)
