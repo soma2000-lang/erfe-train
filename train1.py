@@ -77,7 +77,7 @@ def training_loop(epochs, model, train_loader, val_loader, device, optimizer, cr
     best_val_loss = float('inf')
     best_epoch = -1
     
-    # Creating checkpoint directory
+
     checkpoint_dir = 'checkpoints'
     folder_check(checkpoint_dir)
     
@@ -359,31 +359,33 @@ def visualize_segmentation_results(model, val_loader, device, num_samples=3):
     plt.close()
 
 if __name__ == "__main__":
-    # Define paths to data
+   
     image_dir = "/home/AD/smajumder/runaway/640x360_dataset/640x360/train"
     mask_dir = "/home/AD/smajumder/runaway/resizded_trainimages_640x360"
     line_paths_dir = "/home/AD/smajumder/runaway/train_labels_640x360.json"
     
-    # Get all image paths - ensure we're handling paths correctly
+
     image_paths = []
     for fname in os.listdir(image_dir):
-        if fname.endswith('.png') or fname.endswith('.jpg'):
+        if fname.endswith('.png'):
             image_paths.append(os.path.join(image_dir, fname))
     
-    # Get corresponding mask paths - adjust pattern based on your actual naming convention
+
     mask_paths = []
     valid_image_paths = []
     
+    
     for img_path in image_paths:
         img_name = os.path.basename(img_path)
-        mask_name = img_name.replace('.png', '_area_label.png')
+
+        mask_name = img_name
         mask_path = os.path.join(mask_dir, mask_name)
+        
         if os.path.exists(mask_path):
             mask_paths.append(mask_path)
             valid_image_paths.append(img_path)
         else:
             print(f"Warning: Mask not found for {img_path}")
-    
 
     image_paths = valid_image_paths
     
@@ -392,7 +394,7 @@ if __name__ == "__main__":
     line_paths = [line_paths_dir] * len(image_paths) if os.path.exists(line_paths_dir) else [""] * len(image_paths)
     
     # Split into train and validation
-    train_idx = int(0.8 * len(image_paths))
+    train_idx = int(0.9 * len(image_paths))
     
     train_dataset = RunwayDataset(
         image_paths[:train_idx],
@@ -421,7 +423,7 @@ if __name__ == "__main__":
     
     
     
-    model = ERFE(input_shape=INPUT_SHAPE, num_seg_classes=NUM_SEG_CLASSES, num_line_classes=NUM_LINE_CLASSES)
+    model = ERFE(num_seg_classes=NUM_SEG_CLASSES, num_line_classes=NUM_LINE_CLASSES)
     model = model.to(DEVICE)
 
     criterion = CombinedLoss()
